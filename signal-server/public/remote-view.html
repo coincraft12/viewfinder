@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Viewfinder 원격 보기</title>
+<style>
+  :root {
+    --bg: #0c0d0f;
+    --text: #e7e9ec;
+    --text-dim: #9098a3;
+    --accent: #e0402c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
+  .status {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .dot.live { background: #33c07a; box-shadow: 0 0 8px #33c07a; }
+  .dot.err { background: var(--accent); }
+  .stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px 12px;
+  }
+  video {
+    width: 100%;
+    max-width: 900px;
+    border-radius: 10px;
+    background: #000;
+  }
+  .msg {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    padding: 0 20px;
+  }
+  .token-form {
+    max-width: 320px;
+    margin: 80px auto;
+    padding: 20px;
+    background: #16181c;
+    border-radius: 12px;
+    text-align: center;
+  }
+  .token-form input {
+    width: 100%;
+    padding: 10px;
+    margin: 12px 0;
+    border-radius: 8px;
+    border: 1px solid #2a2d33;
+    background: #0c0d0f;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .token-form button {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Viewfinder 원격 보기</h1>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">연결 대기</span></div>
+  </header>
+  <div class="stage" id="stage">
+    <p class="msg">연결 중…</p>
+  </div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  let token = params.get('token') || localStorage.getItem('viewfinder.remoteToken') || '';
+
+  const stage = document.getElementById('stage');
+  const dot = document.getElementById('dot');
+  const statusText = document.getElementById('statusText');
+
+  function setStatus(text, cls) {
+    statusText.textContent = text;
+    dot.className = 'dot' + (cls ? ' ' + cls : '');
+  }
+
+  function showTokenForm() {
+    stage.innerHTML = `
+      <div class="token-form">
+        <div>보고 있는 카메라의 토큰을 입력하세요</div>
+        <input type="text" id="tokenInput" placeholder="토큰 붙여넣기" />
+        <button id="tokenSubmit">연결</button>
+      </div>
+    `;
+    document.getElementById('tokenSubmit').addEventListener('click', () => {
+      const v = document.getElementById('tokenInput').value.trim();
+      if (!v) return;
+      localStorage.setItem('viewfinder.remoteToken', v);
+      location.search = `?token=${encodeURIComponent(v)}`;
+    });
+  }
+
+  if (!token) {
+    showTokenForm();
+    return;
+  }
+  localStorage.setItem('viewfinder.remoteToken', token);
+
+  stage.innerHTML = '<p class="msg">브로드캐스터(카메라) 연결 대기 중…</p>';
+
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${wsProto}//${location.host}/viewfinder-signal?role=viewer&token=${encodeURIComponent(token)}`);
+
+  let viewerId = null;
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+  pc.ontrack = (e) => {
+    stage.innerHTML = '<video id="remoteVideo" autoplay playsinline controls></video>';
+    document.getElementById('remoteVideo').srcObject = e.streams[0];
+    setStatus('연결됨', 'live');
+  };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+      setStatus('연결 끊김', 'err');
+    }
+  };
+  pc.onicecandidate = (e) => {
+    if (e.candidate && viewerId) {
+      ws.send(JSON.stringify({ type: 'ice', viewerId, data: e.candidate }));
+    }
+  };
+
+  ws.addEventListener('open', () => setStatus('시그널링 연결됨'));
+  ws.addEventListener('close', () => setStatus('시그널링 서버 연결 끊김', 'err'));
+  ws.addEventListener('error', () => setStatus('시그널링 오류', 'err'));
+
+  ws.addEventListener('message', async (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+
+    if (msg.type === 'joined') {
+      viewerId = msg.viewerId;
+    } else if (msg.type === 'offer') {
+      await pc.setRemoteDescription(msg.data);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: 'answer', viewerId, data: answer }));
+      setStatus('영상 연결 중…');
+    } else if (msg.type === 'ice') {
+      try { await pc.addIceCandidate(msg.data); } catch {}
+    }
+  });
+})();
+</script>
+</body>
+</html>

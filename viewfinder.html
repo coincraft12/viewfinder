@@ -741,6 +741,27 @@
     </div>
   </div>
 
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Remote viewing</span>
+      <span class="status-badge" id="remoteStatus">OFF</span>
+    </div>
+
+    <label class="toggle-label">
+      <input type="checkbox" id="chkRemote" style="accent-color:var(--accent);" />
+      Enable remote viewing (다른 기기에서 실시간으로 보기)
+    </label>
+
+    <div id="remoteInfo" hidden>
+      <div class="field-row">
+        <label for="remoteUrl">Viewer link</label>
+        <input type="text" id="remoteUrl" readonly />
+        <button type="button" id="remoteCopyBtn">Copy</button>
+      </div>
+      <p style="font-size:12px;color:var(--text-faint);margin:6px 0 0;">이 링크를 아는 사람은 누구나 볼 수 있음 — 공유 주의. 영상은 P2P 직결이라 서버에는 안 남음.</p>
+    </div>
+  </div>
+
   <footer>Uses getUserMedia — the video stream stays in this browser tab and is never uploaded anywhere. Snapshots are held only in this page's memory and clear on reload. Night mode boosts brightness/contrast/saturation on the feed so faint shapes in low light show up more clearly — it's a display boost, not real infrared vision. Motion clips are recorded locally and sent only to the upload endpoint above — nothing is sent anywhere else. See <code>hetzner-upload-relay.js</code> for the actual Hetzner upload (holds credentials server-side, never in this page).</footer>
 </div>
 
@@ -765,6 +786,11 @@
   const brightnessSlider = document.getElementById('brightnessSlider');
   const brightnessValue = document.getElementById('brightnessValue');
   const chkMotion = document.getElementById('chkMotion');
+  const chkRemote = document.getElementById('chkRemote');
+  const remoteStatus = document.getElementById('remoteStatus');
+  const remoteInfo = document.getElementById('remoteInfo');
+  const remoteUrl = document.getElementById('remoteUrl');
+  const remoteCopyBtn = document.getElementById('remoteCopyBtn');
   const thresholdSlider = document.getElementById('thresholdSlider');
   const thresholdValue = document.getElementById('thresholdValue');
   const cooldownInput = document.getElementById('cooldownInput');
@@ -906,6 +932,7 @@
 
   function resetToIdle() {
     stopStream();
+    if (chkRemote.checked) { chkRemote.checked = false; stopRemoteViewing(); }
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     video.srcObject = null;
     video.classList.add('is-hidden');
@@ -1343,9 +1370,123 @@
   }
   loadRemoteClips();
 
+  // ─── 원격 보기 (WebRTC, 다른 기기에서 실시간 화면 보기) ─────────────────
+  // 영상 데이터는 이 시그널링 서버를 거치지 않음 — 브로드캐스터(이 탭)와 뷰어가
+  // SDP/ICE만 여기로 주고받고, 실제 영상은 두 기기가 P2P로 직접 연결됨(WebRTC).
+  const SIGNAL_HOST = 'staging.coincraft.io';
+  const SIGNAL_URL = `wss://${SIGNAL_HOST}/viewfinder-signal`;
+  const VIEWER_PAGE_URL = `https://${SIGNAL_HOST}/viewfinder/`;
+  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+  let remoteToken = null;
+  let remoteWs = null;
+  const remotePeers = new Map(); // viewerId -> RTCPeerConnection
+
+  function getOrCreateRemoteToken() {
+    let t = localStorage.getItem('viewfinder.remoteToken');
+    if (!t) {
+      t = crypto.randomUUID();
+      localStorage.setItem('viewfinder.remoteToken', t);
+    }
+    return t;
+  }
+
+  async function createViewerPeer(viewerId) {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    remotePeers.set(viewerId, pc);
+    if (stream) {
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    }
+    pc.onicecandidate = (e) => {
+      if (e.candidate) remoteWs.send(JSON.stringify({ type: 'ice', viewerId, data: e.candidate }));
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        remotePeers.delete(viewerId);
+      }
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    remoteWs.send(JSON.stringify({ type: 'offer', viewerId, data: offer }));
+  }
+
+  function startRemoteViewing() {
+    if (!stream) {
+      alert('카메라를 먼저 켜야 원격 보기를 켤 수 있어요.');
+      chkRemote.checked = false;
+      return;
+    }
+    remoteToken = getOrCreateRemoteToken();
+    remoteUrl.value = `${VIEWER_PAGE_URL}?token=${encodeURIComponent(remoteToken)}`;
+    remoteInfo.hidden = false;
+    remoteStatus.textContent = 'CONNECTING';
+    remoteStatus.className = 'status-badge';
+
+    remoteWs = new WebSocket(`${SIGNAL_URL}?role=broadcaster&token=${encodeURIComponent(remoteToken)}`);
+    remoteWs.addEventListener('open', () => {
+      remoteStatus.textContent = 'WAITING';
+    });
+    remoteWs.addEventListener('close', () => {
+      if (chkRemote.checked) {
+        remoteStatus.textContent = 'DISCONNECTED';
+        remoteStatus.className = 'status-badge err';
+      }
+    });
+    remoteWs.addEventListener('error', () => {
+      reportClientError('[remote-view] signaling websocket error');
+    });
+    remoteWs.addEventListener('message', async (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'viewer-joined') {
+        remoteStatus.textContent = 'LIVE';
+        remoteStatus.className = 'status-badge rec';
+        await createViewerPeer(msg.viewerId).catch((err) => reportClientError(`[remote-view] createViewerPeer 실패: ${err && err.message ? err.message : err}`));
+      } else if (msg.type === 'answer') {
+        const pc = remotePeers.get(msg.viewerId);
+        if (pc) await pc.setRemoteDescription(msg.data);
+      } else if (msg.type === 'ice') {
+        const pc = remotePeers.get(msg.viewerId);
+        if (pc) { try { await pc.addIceCandidate(msg.data); } catch {} }
+      } else if (msg.type === 'viewer-left') {
+        const pc = remotePeers.get(msg.viewerId);
+        if (pc) { pc.close(); remotePeers.delete(msg.viewerId); }
+        if (remotePeers.size === 0) {
+          remoteStatus.textContent = 'WAITING';
+          remoteStatus.className = 'status-badge';
+        }
+      }
+    });
+  }
+
+  function stopRemoteViewing() {
+    if (remoteWs) { remoteWs.close(); remoteWs = null; }
+    remotePeers.forEach((pc) => pc.close());
+    remotePeers.clear();
+    remoteInfo.hidden = true;
+    remoteStatus.textContent = 'OFF';
+    remoteStatus.className = 'status-badge';
+  }
+
+  chkRemote.addEventListener('change', () => {
+    if (chkRemote.checked) startRemoteViewing();
+    else stopRemoteViewing();
+  });
+
+  remoteCopyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(remoteUrl.value);
+      remoteCopyBtn.textContent = 'Copied';
+      setTimeout(() => { remoteCopyBtn.textContent = 'Copy'; }, 1500);
+    } catch {
+      remoteUrl.select();
+    }
+  });
+
   window.addEventListener('beforeunload', () => {
     stopMotionLoop();
     if (isRecording) stopRecording(true);
+    stopRemoteViewing();
     stopStream();
   });
 })();

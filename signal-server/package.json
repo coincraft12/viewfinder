@@ -1,0 +1,14 @@
+{
+  "name": "viewfinder-signal-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WebRTC 시그널링 릴레이 — PC 웹캠 브로드캐스터와 원격 뷰어(폰 등) 사이의 SDP/ICE 교환만 중계함. 영상 데이터 자체는 지나가지 않음(P2P 직결).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
