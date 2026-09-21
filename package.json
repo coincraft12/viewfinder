@@ -1,0 +1,14 @@
+{
+  "name": "viewfinder-upload-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local relay that receives motion clips from viewfinder.html and uploads them to a Hetzner Storage Box over WebDAV. Holds the account credentials so the browser page never sees them.",
+  "main": "hetzner-upload-relay.js",
+  "scripts": {
+    "start": "node hetzner-upload-relay.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}

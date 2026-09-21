@@ -1,0 +1,1352 @@
+<meta charset="UTF-8">
+<title>Viewfinder</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Manrope:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #eef0f3;
+    --surface: #ffffff;
+    --surface-2: #e3e6ea;
+    --border: #cdd2d9;
+    --text: #171a1e;
+    --text-dim: #5b6270;
+    --text-faint: #8a909c;
+    --accent: #e0402c;
+    --accent-ink: #ffffff;
+    --viewfinder-bg: #0c0d0f;
+    --viewfinder-line: rgba(255,255,255,0.85);
+    --shadow: 0 1px 2px rgba(20,24,30,0.06), 0 8px 24px -12px rgba(20,24,30,0.18);
+    --focus: #1c66e0;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101215;
+      --surface: #1a1d22;
+      --surface-2: #23272d;
+      --border: #34393f;
+      --text: #eceef1;
+      --text-dim: #a4abb6;
+      --text-faint: #6d7480;
+      --accent: #ff5a42;
+      --accent-ink: #17181a;
+      --viewfinder-bg: #050506;
+      --viewfinder-line: rgba(255,255,255,0.75);
+      --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 12px 32px -14px rgba(0,0,0,0.6);
+      --focus: #6fa8ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101215;
+    --surface: #1a1d22;
+    --surface-2: #23272d;
+    --border: #34393f;
+    --text: #eceef1;
+    --text-dim: #a4abb6;
+    --text-faint: #6d7480;
+    --accent: #ff5a42;
+    --accent-ink: #17181a;
+    --viewfinder-bg: #050506;
+    --viewfinder-line: rgba(255,255,255,0.75);
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 12px 32px -14px rgba(0,0,0,0.6);
+    --focus: #6fa8ff;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Manrope', system-ui, sans-serif;
+    padding-inline: 20px;
+    padding-block: 32px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* 기본값 stretch가 .rig를 짓눌러서 .viewfinder 높이가 다 무시되던 진짜 원인 */
+  }
+
+  .rig {
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  h1 {
+    font-family: 'Big Shoulders Display', sans-serif;
+    font-weight: 800;
+    font-size: clamp(28px, 6vw, 38px);
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    margin: 0;
+    text-wrap: balance;
+    line-height: 0.95;
+  }
+  .kicker {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  /* ---- viewfinder ---- */
+  .viewfinder {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: var(--viewfinder-bg);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    background: var(--viewfinder-bg);
+  }
+  video.mirrored { transform: scaleX(-1); }
+  video.is-hidden { display: none; }
+
+  .viewfinder:fullscreen,
+  .viewfinder:-webkit-full-screen {
+    /* 화면 꽉 채우는 대신 평소 화면비(16:9)를 그대로 유지한 채로 화면에 들어가는 최대 크기로만 키움 */
+    aspect-ratio: 16 / 9;
+    width: min(100vw, 100vh * 16 / 9);
+    height: min(100vh, 100vw * 9 / 16);
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .fs-btn {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: rgba(10,11,13,0.55);
+    backdrop-filter: blur(6px);
+    color: #f2f3f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .fs-btn:hover { background: rgba(10,11,13,0.75); }
+  .fs-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .fs-btn.is-hidden { display: none; }
+
+  .brackets span {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    border: 2px solid var(--viewfinder-line);
+    opacity: 0.9;
+  }
+  .brackets .tl { top: 14px; left: 14px; border-right: none; border-bottom: none; }
+  .brackets .tr { top: 14px; right: 14px; border-left: none; border-bottom: none; }
+  .brackets .bl { bottom: 14px; left: 14px; border-right: none; border-top: none; }
+  .brackets .br { bottom: 14px; right: 14px; border-left: none; border-top: none; }
+
+  .rec-pill {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(10,11,13,0.55);
+    backdrop-filter: blur(6px);
+    padding: 5px 12px 5px 9px;
+    border-radius: 999px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: #f2f3f5;
+  }
+  .rec-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .rec-pill.is-live .rec-dot { animation: pulse 1.6s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .rec-pill.is-live .rec-dot { animation: none; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(224,64,44,0.5); }
+    50% { opacity: 0.6; box-shadow: 0 0 0 5px rgba(224,64,44,0); }
+  }
+
+  .placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-faint);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-align: center;
+    padding: 20px;
+  }
+  .placeholder svg { opacity: 0.55; }
+  .placeholder.is-hidden { display: none; }
+
+  .flash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .flash.fire {
+    animation: flash-anim 320ms ease-out;
+  }
+  @keyframes flash-anim {
+    0% { opacity: 0.85; }
+    100% { opacity: 0; }
+  }
+
+  /* ---- readout strip ---- */
+  .readout {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  @media (max-width: 480px) {
+    .readout { grid-template-columns: 1fr; }
+  }
+  .readout div {
+    background: var(--surface);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .readout .label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .readout .value {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.3;
+  }
+
+  /* ---- controls ---- */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  button {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    padding: 10px 16px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+  }
+  button:hover { background: var(--surface-2); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+  button.primary:hover { filter: brightness(1.06); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button svg { flex: none; }
+
+  select {
+    font-family: 'Manrope', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 12px;
+    max-width: 100%;
+  }
+  select:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .control-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .control-row .group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 14px;
+  }
+  .slider-row label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    flex: none;
+  }
+  .slider-row input[type="range"] {
+    flex: 1;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-2);
+    outline: none;
+  }
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+  .slider-row input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+  .slider-row input[type="range"]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .slider-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    flex: none;
+    width: 42px;
+    text-align: right;
+  }
+
+  .error-banner {
+    font-family: 'Space Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .error-banner.is-hidden { display: none; }
+  .error-banner b { color: var(--accent); }
+
+  /* ---- snapshot strip ---- */
+  .snapshot-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .snapshot-section.is-hidden { display: none; }
+  .snapshot-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .snapshot-head .label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .snapshot-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .snapshot-strip img {
+    height: 78px;
+    width: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    flex: none;
+  }
+
+  footer {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.6;
+  }
+
+  /* ---- motion & recording panel ---- */
+  .panel {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .panel-title {
+    font-family: 'Big Shoulders Display', sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+  }
+  .status-badge {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+  }
+  .status-badge.rec { background: var(--accent); color: var(--accent-ink); }
+  .status-badge.up { background: #2b8a5e; color: #fff; }
+  .status-badge.err { background: var(--accent); color: var(--accent-ink); }
+
+  .field-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .field-row label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    flex: none;
+    min-width: 92px;
+  }
+  .field-row input[type="text"], .field-row input[type="number"] {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 10px;
+    flex: 1;
+    min-width: 140px;
+  }
+  .field-row input[type="text"]:focus-visible,
+  .field-row input[type="number"]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  .meter {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    background: var(--surface-2);
+    overflow: visible;
+  }
+  .meter-fill {
+    height: 100%;
+    border-radius: 5px;
+    background: linear-gradient(90deg, #2b8a5e, #d4a72c 65%, var(--accent) 90%);
+    width: 0%;
+    transition: width 120ms linear;
+  }
+  .meter-threshold {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background: var(--text);
+    left: 8%;
+  }
+
+  .clip-player {
+    margin-bottom: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+  }
+  .clip-player video {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 70vh;
+    border-radius: 7px;
+    background: #000;
+  }
+  .clip-player button {
+    margin-top: 8px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+  }
+  .clip-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .clip-list .empty {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    font-style: italic;
+  }
+  .clip-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+  }
+  .clip-row .meta {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .clip-row .time {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .clip-row .dur {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .clip-row button {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+</style>
+
+<div class="rig">
+  <header>
+    <div>
+      <div class="kicker">Local device · nothing leaves this tab</div>
+      <h1>Viewfinder</h1>
+    </div>
+  </header>
+
+  <div class="viewfinder" id="viewfinder">
+    <video id="video" playsinline muted class="is-hidden"></video>
+
+    <div class="placeholder" id="placeholder">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 8a2 2 0 0 1 2-2h1.2a1 1 0 0 0 .86-.49l.68-1.14A2 2 0 0 1 10.46 3.4h3.08a2 2 0 0 1 1.72.97l.68 1.14a1 1 0 0 0 .86.49H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="3.3" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M2 2l20 20" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      <span>No signal — press start to request camera access</span>
+    </div>
+
+    <div class="brackets" id="brackets" style="display:none;">
+      <span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span>
+    </div>
+
+    <div class="rec-pill" id="recPill" style="display:none;">
+      <span class="rec-dot"></span><span id="recLabel">LIVE</span>
+    </div>
+
+    <div class="flash" id="flash"></div>
+
+    <button class="fs-btn is-hidden" id="btnFullscreen" type="button" title="Fullscreen" aria-label="Toggle fullscreen">
+      <svg id="fsIconExpand" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 4H5a1 1 0 0 0-1 1v4M15 4h4a1 1 0 0 1 1 1v4M9 20H5a1 1 0 0 1-1-1v-4M15 20h4a1 1 0 0 0 1-1v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg id="fsIconCollapse" width="16" height="16" viewBox="0 0 24 24" fill="none" style="display:none;"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+
+  <div class="readout">
+    <div>
+      <span class="label">Device</span>
+      <span class="value" id="roDevice">—</span>
+    </div>
+    <div>
+      <span class="label">Resolution</span>
+      <span class="value" id="roRes">—</span>
+    </div>
+    <div>
+      <span class="label">Frame rate</span>
+      <span class="value" id="roFps">—</span>
+    </div>
+  </div>
+
+  <div class="control-row">
+    <div class="group">
+      <button class="primary" id="btnStart" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M15 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3.5l5 4v-11l-5 4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        Start camera
+      </button>
+      <button id="btnStop" type="button" disabled>Stop</button>
+      <button id="btnFlip" type="button" disabled title="Switch camera">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h9a5 5 0 0 1 5 5v1M21 18H12a5 5 0 0 1-5-5v-1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="group">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
+        <input type="checkbox" id="chkMirror" style="accent-color:var(--accent);" />
+        Mirror
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
+        <input type="checkbox" id="chkNight" style="accent-color:var(--accent);" />
+        Night mode
+      </label>
+      <button id="btnShot" type="button" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.6"/><path d="M4 8a2 2 0 0 1 2-2h1.2a1 1 0 0 0 .86-.49l.5-.84A1.8 1.8 0 0 1 10.1 3.7h3.8a1.8 1.8 0 0 1 1.54.87l.5.84a1 1 0 0 0 .86.49H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="currentColor" stroke-width="1.6"/></svg>
+        Snapshot
+      </button>
+    </div>
+  </div>
+
+  <div class="slider-row">
+    <label for="brightnessSlider">Brightness</label>
+    <input type="range" id="brightnessSlider" min="50" max="300" value="100" step="5" />
+    <span class="slider-value" id="brightnessValue">100%</span>
+  </div>
+
+  <select id="selDevice" style="display:none;"></select>
+
+  <div class="error-banner is-hidden" id="errorBanner">
+    <b>Camera unavailable —</b> <span id="errorText"></span>
+  </div>
+
+  <div class="snapshot-section is-hidden" id="snapshotSection">
+    <div class="snapshot-head">
+      <span class="label">Snapshots this session</span>
+      <span class="label" id="snapCount">0</span>
+    </div>
+    <div class="snapshot-strip" id="snapshotStrip"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Motion recording</span>
+      <span class="status-badge" id="motionStatus">IDLE</span>
+    </div>
+
+    <label class="toggle-label">
+      <input type="checkbox" id="chkMotion" style="accent-color:var(--accent);" disabled />
+      Enable motion detection
+    </label>
+
+    <div>
+      <div class="field-row" style="margin-bottom:8px;">
+        <label for="thresholdSlider">Threshold</label>
+        <input type="range" id="thresholdSlider" min="0" max="10" step="0.1" value="2" style="flex:1;" />
+        <span class="slider-value" id="thresholdValue">2.0%</span>
+      </div>
+      <div class="meter">
+        <div class="meter-fill" id="meterFill"></div>
+        <div class="meter-threshold" id="meterThreshold"></div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label for="cooldownInput">Stop after</label>
+      <input type="number" id="cooldownInput" min="1" max="60" value="4" style="max-width:70px;" />
+      <span style="font-size:12.5px;color:var(--text-faint);">sec of no motion</span>
+    </div>
+
+    <div class="field-row">
+      <label for="uploadEndpoint">Upload to</label>
+      <input type="text" id="uploadEndpoint" value="http://localhost:8787/upload" />
+    </div>
+
+    <div class="clip-player" id="clipPlayer" hidden>
+      <video id="clipPlayerVideo" controls autoplay></video>
+      <button type="button" id="clipPlayerClose">Close player</button>
+    </div>
+
+    <div class="clip-list" id="clipList">
+      <span class="empty">No clips yet — clips appear here once motion crosses the threshold.</span>
+    </div>
+  </div>
+
+  <footer>Uses getUserMedia — the video stream stays in this browser tab and is never uploaded anywhere. Snapshots are held only in this page's memory and clear on reload. Night mode boosts brightness/contrast/saturation on the feed so faint shapes in low light show up more clearly — it's a display boost, not real infrared vision. Motion clips are recorded locally and sent only to the upload endpoint above — nothing is sent anywhere else. See <code>hetzner-upload-relay.js</code> for the actual Hetzner upload (holds credentials server-side, never in this page).</footer>
+</div>
+
+<script>
+(function () {
+  const video = document.getElementById('video');
+  const viewfinder = document.getElementById('viewfinder');
+  const placeholder = document.getElementById('placeholder');
+  const brackets = document.getElementById('brackets');
+  const recPill = document.getElementById('recPill');
+  const recLabel = document.getElementById('recLabel');
+  const flash = document.getElementById('flash');
+  const btnFullscreen = document.getElementById('btnFullscreen');
+  const fsIconExpand = document.getElementById('fsIconExpand');
+  const fsIconCollapse = document.getElementById('fsIconCollapse');
+  const btnStart = document.getElementById('btnStart');
+  const btnStop = document.getElementById('btnStop');
+  const btnFlip = document.getElementById('btnFlip');
+  const btnShot = document.getElementById('btnShot');
+  const chkMirror = document.getElementById('chkMirror');
+  const chkNight = document.getElementById('chkNight');
+  const brightnessSlider = document.getElementById('brightnessSlider');
+  const brightnessValue = document.getElementById('brightnessValue');
+  const chkMotion = document.getElementById('chkMotion');
+  const thresholdSlider = document.getElementById('thresholdSlider');
+  const thresholdValue = document.getElementById('thresholdValue');
+  const cooldownInput = document.getElementById('cooldownInput');
+  const uploadEndpointInput = document.getElementById('uploadEndpoint');
+  const motionStatus = document.getElementById('motionStatus');
+  const meterFill = document.getElementById('meterFill');
+  const meterThreshold = document.getElementById('meterThreshold');
+  const clipList = document.getElementById('clipList');
+  const clipPlayer = document.getElementById('clipPlayer');
+  const clipPlayerVideo = document.getElementById('clipPlayerVideo');
+  const clipPlayerClose = document.getElementById('clipPlayerClose');
+  const selDevice = document.getElementById('selDevice');
+  const errorBanner = document.getElementById('errorBanner');
+  const errorText = document.getElementById('errorText');
+  const roDevice = document.getElementById('roDevice');
+  const roRes = document.getElementById('roRes');
+  const roFps = document.getElementById('roFps');
+  const snapshotSection = document.getElementById('snapshotSection');
+  const snapshotStrip = document.getElementById('snapshotStrip');
+  const snapCount = document.getElementById('snapCount');
+
+  let stream = null;
+  let shotN = 0;
+  let currentFacing = 'user';
+
+  function showError(msg) {
+    errorText.textContent = msg;
+    errorBanner.classList.remove('is-hidden');
+  }
+  function clearError() {
+    errorBanner.classList.add('is-hidden');
+  }
+
+  async function listCameras() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === 'videoinput');
+      selDevice.innerHTML = '';
+      if (cams.length > 1) {
+        cams.forEach((c, i) => {
+          const opt = document.createElement('option');
+          opt.value = c.deviceId;
+          opt.textContent = c.label || `Camera ${i + 1}`;
+          selDevice.appendChild(opt);
+        });
+        selDevice.style.display = 'block';
+      } else {
+        selDevice.style.display = 'none';
+      }
+      btnFlip.disabled = cams.length < 2;
+      return cams;
+    } catch {
+      return [];
+    }
+  }
+
+  async function startCamera(constraintsOverride) {
+    clearError();
+    stopStream();
+    btnStart.disabled = true;
+    btnStart.textContent = 'Connecting…';
+    try {
+      // width/height를 exact/min으로 강제하지는 않음 — 일부 가상 카메라·폰캠 앱은 요청 해상도가
+      // 자기 센서 비율과 안 맞으면 잘라내는 대신 눌러서(stretch) 보내 화면이 납작해 보이는 원인이 됨.
+      // 대신 ideal로만 1080p를 요청 — 실제 물리 웹캠은 지원하는 모드 중 가장 가까운 걸 그대로
+      // 협상해서 주기 때문에(스트레치 아님) 안전하고, 미지정 시 기본값(640x480)으로 떨어지는 걸 막아줌.
+      const constraints = constraintsOverride || {
+        video: { facingMode: { ideal: currentFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await video.play();
+
+      video.classList.remove('is-hidden');
+      placeholder.classList.add('is-hidden');
+      brackets.style.display = 'block';
+      recPill.style.display = 'flex';
+      recPill.classList.add('is-live');
+      recLabel.textContent = 'LIVE';
+      btnFullscreen.classList.remove('is-hidden');
+
+      btnStop.disabled = false;
+      btnShot.disabled = false;
+      chkMotion.disabled = false;
+      startMotionLoop();
+
+      const track = stream.getVideoTracks()[0];
+      const settings = track.getSettings ? track.getSettings() : {};
+      roDevice.textContent = track.label ? track.label.slice(0, 28) : '—';
+      roRes.textContent = settings.width && settings.height ? `${settings.width} × ${settings.height}` : '—';
+      roFps.textContent = settings.frameRate ? `${Math.round(settings.frameRate)} fps` : '—';
+
+      // CSS 필터(brightness 등)는 이미 카메라가 순수 검은색(0,0,0)으로 찍어버린 픽셀은 복구 못함 —
+      // 진짜 저조도 개선은 카메라 하드웨어 자체의 노출 설정을 건드려야 함. 카메라가 지원하면 시도.
+      try {
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        reportClientError(`[camera capabilities] ${JSON.stringify(caps)}`);
+        // exposureTime(셔터를 오래 열어 빛을 더 받는 것)은 진짜 광량 개선이라 노이즈가 적은데,
+        // brightness/exposureCompensation을 같이 최대로 걸면 그 위에 신호를 억지로 증폭해서
+        // 노이즈만 심해짐 — 그래서 exposureTime만 최대로 걸고 나머지는 카메라 기본값에 맡김
+        const advanced = {};
+        if (caps.exposureMode && caps.exposureMode.includes('manual') && caps.exposureTime) {
+          advanced.exposureMode = 'manual';
+          advanced.exposureTime = caps.exposureTime.max;
+        }
+        if (Object.keys(advanced).length > 0) {
+          await track.applyConstraints({ advanced: [advanced] });
+          reportClientError(`[camera] applied low-light constraints: ${JSON.stringify(advanced)}`);
+        } else {
+          reportClientError('[camera] no exposure/brightness capability exposed by this camera/driver');
+        }
+      } catch (capErr) {
+        reportClientError(`[camera capabilities error] ${capErr && capErr.message ? capErr.message : capErr}`);
+      }
+
+      await listCameras();
+      if (settings.deviceId) selDevice.value = settings.deviceId;
+    } catch (err) {
+      const name = err && err.name ? err.name : 'Error';
+      let msg = err && err.message ? err.message : String(err);
+      if (name === 'NotAllowedError') msg = '카메라 권한이 거부됐습니다. 브라우저 주소창의 권한 설정에서 허용해주세요.';
+      else if (name === 'NotFoundError') msg = '연결된 카메라를 찾을 수 없습니다.';
+      else if (name === 'NotReadableError') msg = '다른 앱이 카메라를 사용 중일 수 있습니다.';
+      showError(`${name} — ${msg}`);
+      resetToIdle();
+    } finally {
+      btnStart.disabled = false;
+      btnStart.textContent = 'Start camera';
+    }
+  }
+
+  function stopStream() {
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+    }
+  }
+
+  function resetToIdle() {
+    stopStream();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    video.srcObject = null;
+    video.classList.add('is-hidden');
+    placeholder.classList.remove('is-hidden');
+    brackets.style.display = 'none';
+    recPill.style.display = 'none';
+    recPill.classList.remove('is-live');
+    btnFullscreen.classList.add('is-hidden');
+    btnStop.disabled = true;
+    btnShot.disabled = true;
+    roDevice.textContent = '—';
+    roRes.textContent = '—';
+    roFps.textContent = '—';
+    chkMotion.checked = false;
+    chkMotion.disabled = true;
+    stopMotionLoop();
+    if (isRecording) stopRecording(true);
+  }
+
+  btnStart.addEventListener('click', () => startCamera());
+  btnStop.addEventListener('click', () => {
+    resetToIdle();
+  });
+  btnFlip.addEventListener('click', () => {
+    currentFacing = currentFacing === 'user' ? 'environment' : 'user';
+    startCamera();
+  });
+  selDevice.addEventListener('change', () => {
+    startCamera({ video: { deviceId: { exact: selDevice.value }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+  });
+  chkMirror.addEventListener('change', () => {
+    video.classList.toggle('mirrored', chkMirror.checked);
+  });
+  chkMirror.checked = true;
+  video.classList.add('mirrored');
+
+  // 밝기 슬라이더 + 야간모드를 하나의 filter 문자열로 합성해서 video와 스냅샷 캡처에 동일하게 적용
+  function currentFilter() {
+    const b = Number(brightnessSlider.value) / 100;
+    // invert는 그냥 색을 뒤집는 거라 어두운 곳이 밝아 보이는 것도 아니고 색만 이상해짐 — 진짜 도움 되는 건
+    // 노출을 실제로 끌어올리는 것(brightness)과, 그 과정에서 뿌옇게 washed-out 되는 걸 잡아주는 contrast/saturate
+    return chkNight.checked
+      ? `brightness(${b}) contrast(1.35) saturate(1.4)`
+      : `brightness(${b})`;
+  }
+  function applyFilters() {
+    video.style.filter = currentFilter();
+    brightnessValue.textContent = `${brightnessSlider.value}%`;
+  }
+  chkNight.addEventListener('change', () => {
+    // 야간모드 처음 켤 때 밝기가 기본값(100%)이면 보기 좋은 시작점으로 살짝 올려줌 (사용자가 다시 조절 가능)
+    // invert를 뺐으니 어두운 곳을 실제로 보이게 하려면 밝기 자체를 더 세게 올려야 함
+    if (chkNight.checked && Number(brightnessSlider.value) === 100) brightnessSlider.value = '220';
+    applyFilters();
+  });
+  brightnessSlider.addEventListener('input', applyFilters);
+  applyFilters();
+
+  btnShot.addEventListener('click', () => {
+    if (!stream) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.filter = currentFilter();
+    if (chkMirror.checked) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const url = canvas.toDataURL('image/jpeg', 0.9);
+
+    flash.classList.remove('fire');
+    void flash.offsetWidth;
+    flash.classList.add('fire');
+
+    shotN += 1;
+    snapCount.textContent = String(shotN);
+    snapshotSection.classList.remove('is-hidden');
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = `Snapshot ${shotN}`;
+    snapshotStrip.prepend(img);
+  });
+
+  btnFullscreen.addEventListener('click', () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      viewfinder.requestFullscreen().catch((err) => showError(`전체화면 전환 실패 — ${err.message}`));
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    const isFs = document.fullscreenElement === viewfinder;
+    fsIconExpand.style.display = isFs ? 'none' : 'block';
+    fsIconCollapse.style.display = isFs ? 'block' : 'none';
+    btnFullscreen.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
+  });
+
+  // ─── Motion detection + recording + upload ───────────────────────────
+  const MOTION_METER_MAX = 10;       // meter/threshold slider scale ceiling (%) — 10% 넘으면 사실상 의미 없어서 슬라이더도 0~10%로 맞춤
+  const PIXEL_DIFF_SENSITIVITY = 20; // 픽셀 하나가 "바뀌었다"고 칠 RGB 차이 합 기준값 (고정, 낮을수록 저대비 움직임도 잡음)
+  const MAX_CLIP_MS = 60000;         // safety cap so a stuck trigger can't record forever
+
+  const analysisCanvas = document.createElement('canvas');
+  const analysisCtx = analysisCanvas.getContext('2d', { willReadFrequently: true });
+  const recordCanvas = document.createElement('canvas');
+  const recordCtx = recordCanvas.getContext('2d');
+
+  let prevFrameData = null;
+  let motionIntervalId = null;
+  let isRecording = false;
+  let mediaRecorder = null;
+  let recordStartTime = 0;
+  let lastMotionAt = 0;
+  let recordRafId = null;
+  let recordTimerId = null;
+  let cooldownCheckId = null;
+  let clipCounter = 0;
+  const clipBlobs = new Map();
+
+  function updateThresholdMarker() {
+    const pct = Math.min(100, (Number(thresholdSlider.value) / MOTION_METER_MAX) * 100);
+    meterThreshold.style.left = `${pct}%`;
+    thresholdValue.textContent = `${Number(thresholdSlider.value).toFixed(1)}%`;
+  }
+  thresholdSlider.addEventListener('input', updateThresholdMarker);
+  updateThresholdMarker();
+
+  function startMotionLoop() {
+    stopMotionLoop();
+    prevFrameData = null;
+    motionIntervalId = setInterval(analyzeFrame, 200);
+  }
+  function stopMotionLoop() {
+    if (motionIntervalId) clearInterval(motionIntervalId);
+    motionIntervalId = null;
+    prevFrameData = null;
+    meterFill.style.width = '0%';
+  }
+
+  function analyzeFrame() {
+    if (!stream || !video.videoWidth) return;
+    const w = 160;
+    const h = Math.round((160 * video.videoHeight) / video.videoWidth) || 90;
+    if (analysisCanvas.width !== w || analysisCanvas.height !== h) {
+      analysisCanvas.width = w;
+      analysisCanvas.height = h;
+    }
+    analysisCtx.drawImage(video, 0, 0, w, h);
+    const frame = analysisCtx.getImageData(0, 0, w, h);
+
+    let score = 0;
+    if (prevFrameData) {
+      const data = frame.data;
+      const prev = prevFrameData.data;
+      const totalPixels = data.length / 4;
+      let changed = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const diff = Math.abs(data[i] - prev[i]) + Math.abs(data[i + 1] - prev[i + 1]) + Math.abs(data[i + 2] - prev[i + 2]);
+        if (diff > PIXEL_DIFF_SENSITIVITY) changed++;
+      }
+      score = (changed / totalPixels) * 100;
+    }
+    prevFrameData = frame;
+
+    meterFill.style.width = `${Math.min(100, (score / MOTION_METER_MAX) * 100)}%`;
+
+    if (chkMotion.checked && score >= Number(thresholdSlider.value)) {
+      lastMotionAt = Date.now();
+      if (!isRecording) startRecording();
+    }
+  }
+
+  chkMotion.addEventListener('change', () => {
+    if (!chkMotion.checked && isRecording) stopRecording(false);
+  });
+
+  function startRecording() {
+    isRecording = true;
+    recordStartTime = Date.now();
+    motionStatus.textContent = 'REC 0s';
+    motionStatus.className = 'status-badge rec';
+
+    recordCanvas.width = video.videoWidth || 640;
+    recordCanvas.height = video.videoHeight || 480;
+
+    function drawLoop() {
+      if (!isRecording) return;
+      // drawImage 등에서 한번이라도 예외가 나면 requestAnimationFrame 체인이 그 자리에서
+      // 영원히 끊겨서 그 뒤로 캔버스가 멈춘 한 프레임 그대로 굳어버림(=녹화 파일이 프레임 1개짜리로 나옴).
+      // try/finally로 무슨 일이 있어도 다음 프레임 예약은 계속 이어지게 함.
+      try {
+        recordCtx.save();
+        recordCtx.filter = currentFilter();
+        if (chkMirror.checked) {
+          recordCtx.translate(recordCanvas.width, 0);
+          recordCtx.scale(-1, 1);
+        }
+        recordCtx.drawImage(video, 0, 0, recordCanvas.width, recordCanvas.height);
+        recordCtx.restore();
+      } catch (err) {
+        const msg = `[viewfinder] drawLoop 프레임 그리기 실패 (녹화는 계속 시도함): ${err && err.message ? err.message : err}`;
+        console.error(msg);
+        reportClientError(msg);
+      } finally {
+        recordRafId = requestAnimationFrame(drawLoop);
+      }
+    }
+    drawLoop();
+
+    const canvasStream = recordCanvas.captureStream(30);
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+      ? 'video/webm;codecs=vp9'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+        ? 'video/webm;codecs=vp8'
+        : 'video/webm';
+    // mediaRecorder.stop()은 비동기라서, 끝나기 전에(=onstop 전에) 모션이 바로 다시 잡혀서
+    // startRecording()이 재호출되면 예전엔 공유 전역변수(recordedChunks)를 다음 녹화가 리셋해버려서
+    // 방금 끝난 녹화의 데이터가 완성되기 직전에 유실/오염됐음(예: 차 들어올 때만 찍히고 나갈 때 못 찍힘).
+    // 그래서 녹화 세션마다 자기만의 chunks/시작시간을 갖는 객체를 만들어서 절대 안 섞이게 함.
+    const session = { chunks: [], startTime: recordStartTime };
+    mediaRecorder = new MediaRecorder(canvasStream, { mimeType });
+    mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) session.chunks.push(e.data); };
+    mediaRecorder.onstop = () => finalizeRecording(session);
+    mediaRecorder.start();
+
+    recordTimerId = setInterval(() => {
+      motionStatus.textContent = `REC ${Math.floor((Date.now() - recordStartTime) / 1000)}s`;
+    }, 1000);
+
+    cooldownCheckId = setInterval(() => {
+      const cooldownMs = Math.max(1, Number(cooldownInput.value || 4)) * 1000;
+      if (Date.now() - lastMotionAt > cooldownMs || Date.now() - recordStartTime > MAX_CLIP_MS) {
+        stopRecording(false);
+      }
+    }, 500);
+  }
+
+  function stopRecording(discard) {
+    isRecording = false;
+    if (recordRafId) cancelAnimationFrame(recordRafId);
+    if (cooldownCheckId) clearInterval(cooldownCheckId);
+    if (recordTimerId) clearInterval(recordTimerId);
+    recordRafId = null;
+    cooldownCheckId = null;
+    recordTimerId = null;
+
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      if (discard) mediaRecorder.onstop = null;
+      mediaRecorder.stop();
+    }
+    if (discard) {
+      motionStatus.textContent = 'IDLE';
+      motionStatus.className = 'status-badge';
+    }
+  }
+
+  function finalizeRecording(session) {
+    const blob = new Blob(session.chunks, { type: 'video/webm' });
+    const durationSec = Math.round((Date.now() - session.startTime) / 1000);
+    const ts = new Date();
+    const id = ++clipCounter;
+    clipBlobs.set(id, blob);
+    addClipRow(id, ts, durationSec);
+    if (!isRecording) {
+      motionStatus.textContent = 'IDLE';
+      motionStatus.className = 'status-badge';
+    }
+    uploadClip(id, blob, ts);
+  }
+
+  function addClipRow(id, ts, durationSec) {
+    const emptyMsg = clipList.querySelector('.empty');
+    if (emptyMsg) emptyMsg.remove();
+    const row = document.createElement('div');
+    row.className = 'clip-row';
+    row.id = `clip-${id}`;
+    row.innerHTML = `
+      <div class="meta">
+        <span class="time">${ts.toLocaleTimeString()}</span>
+        <span class="dur">${durationSec}s clip</span>
+      </div>
+      <span class="status-badge" id="clip-status-${id}">UPLOADING</span>
+    `;
+    clipList.prepend(row);
+  }
+
+  function updateClipStatus(id, status, detail) {
+    const badge = document.getElementById(`clip-status-${id}`);
+    if (!badge) return;
+    if (status === 'uploaded') {
+      // 새로고침 안 해도 바로 재생 가능하게 — 방금 녹화된 로컬 blob을 그대로 플레이어에 물림
+      const blob = clipBlobs.get(id);
+      const playBtn = document.createElement('button');
+      playBtn.type = 'button';
+      playBtn.id = `clip-status-${id}`;
+      playBtn.textContent = 'Play';
+      playBtn.addEventListener('click', () => playClipInPlayer(URL.createObjectURL(blob)));
+      badge.replaceWith(playBtn);
+    } else if (status === 'failed') {
+      badge.className = 'status-badge err';
+      badge.innerHTML = '';
+      const label = document.createElement('span');
+      label.textContent = `FAILED${detail ? ` (${detail})` : ''}`;
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.textContent = 'Retry';
+      retryBtn.style.marginLeft = '8px';
+      retryBtn.addEventListener('click', () => {
+        const blob = clipBlobs.get(id);
+        if (blob) {
+          badge.className = 'status-badge';
+          badge.textContent = 'UPLOADING';
+          uploadClip(id, blob, new Date());
+        }
+      });
+      badge.appendChild(label);
+      badge.appendChild(retryBtn);
+    }
+  }
+
+  async function uploadClip(id, blob, ts) {
+    const endpoint = uploadEndpointInput.value.trim();
+    const filename = `motion-${ts.toISOString().replace(/[:.]/g, '-')}.webm`;
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'video/webm', 'X-Filename': filename },
+        body: blob,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      updateClipStatus(id, 'uploaded');
+    } catch (err) {
+      updateClipStatus(id, 'failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // persist upload endpoint choice across reloads (local to this browser only)
+  try {
+    const saved = localStorage.getItem('viewfinder.uploadEndpoint');
+    if (saved) uploadEndpointInput.value = saved;
+  } catch {}
+  uploadEndpointInput.addEventListener('change', () => {
+    try { localStorage.setItem('viewfinder.uploadEndpoint', uploadEndpointInput.value.trim()); } catch {}
+    loadRemoteClips();
+  });
+
+  // ── Storage Box에 이미 올라가 있는 클립 목록 불러오기 (재실행해도 기록 유지) ──
+  function relayBase() {
+    return uploadEndpointInput.value.trim().replace(/\/upload\/?$/, '');
+  }
+
+  // 브라우저 콘솔 에러를 릴레이 서버의 viewfinder-client.log로도 보냄 —
+  // 매번 콘솔 캡처해달라고 부탁 안 해도 서버 쪽에서 바로 확인 가능하게
+  function reportClientError(message) {
+    try {
+      fetch(`${relayBase()}/log`, { method: 'POST', body: String(message) }).catch(() => {});
+    } catch {}
+  }
+  window.addEventListener('error', (e) => reportClientError(`[window.onerror] ${e.message} @ ${e.filename}:${e.lineno}`));
+  window.addEventListener('unhandledrejection', (e) => reportClientError(`[unhandledrejection] ${e.reason}`));
+
+  function formatBytes(n) {
+    if (n === null || n === undefined) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function renderRemoteClip(clip) {
+    const emptyMsg = clipList.querySelector('.empty');
+    if (emptyMsg) emptyMsg.remove();
+    const row = document.createElement('div');
+    row.className = 'clip-row';
+    const ts = clip.modified ? new Date(clip.modified) : null;
+    const label = clip.path.replace(/^viewfinder-motion\//, '');
+    row.innerHTML = `
+      <div class="meta">
+        <span class="time">${ts ? ts.toLocaleString() : clip.name}</span>
+        <span class="dur">${formatBytes(clip.size)} · ${label}</span>
+      </div>
+      <button type="button" class="play-btn">Play</button>
+    `;
+    const btn = row.querySelector('.play-btn');
+    btn.addEventListener('click', () => playClipInPlayer(`${relayBase()}/file?path=${encodeURIComponent(clip.path)}`));
+    clipList.appendChild(row);
+  }
+
+  // 목록 줄 안에 작게 끼워넣으면 .clip-list의 좁은 스크롤 높이에 눌려서 영상이 손톱만하게 보임 —
+  // 그래서 목록 바깥의 공용 플레이어 하나에 실제 영상 크기(가로 100%, 세로는 비율대로 auto)로 띄움
+  function playClipInPlayer(src) {
+    clipPlayerVideo.src = src;
+    clipPlayer.hidden = false;
+    clipPlayer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // 녹화가 끝까지 정상적으로 끝난 파일은 헤더에 이미 정확한 길이가 들어있음 — 이런 파일까지
+    // 끝으로 탐색했다가 되돌아오게 만들면 오히려 중간 버퍼링 구간이 빠져서 재생이 도중에 멈춰버림.
+    // 그래서 duration이 진짜 이상한 값(Infinity/NaN/0)일 때만 재계산을 시도함
+    clipPlayerVideo.addEventListener('loadedmetadata', () => {
+      const d = clipPlayerVideo.duration;
+      if (d === 0 || !Number.isFinite(d)) {
+        clipPlayerVideo.currentTime = 1e9;
+        clipPlayerVideo.addEventListener('timeupdate', function fixDuration() {
+          clipPlayerVideo.removeEventListener('timeupdate', fixDuration);
+          clipPlayerVideo.currentTime = 0;
+        }, { once: true });
+      }
+    }, { once: true });
+  }
+
+  clipPlayerClose.addEventListener('click', () => {
+    clipPlayerVideo.pause();
+    clipPlayerVideo.removeAttribute('src');
+    clipPlayerVideo.load();
+    clipPlayer.hidden = true;
+  });
+
+  async function loadRemoteClips() {
+    const base = relayBase();
+    if (!base) return;
+    try {
+      const res = await fetch(`${base}/clips`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'unknown error');
+      clipList.querySelectorAll('.clip-row').forEach((row) => row.remove());
+      if (data.clips.length === 0) {
+        clipList.innerHTML = '<span class="empty">No clips yet — clips appear here once motion crosses the threshold.</span>';
+      } else {
+        data.clips.forEach(renderRemoteClip);
+      }
+    } catch (err) {
+      console.warn('[viewfinder] 저장소 클립 목록 불러오기 실패 (릴레이 서버가 꺼져 있을 수 있음):', err);
+    }
+  }
+  loadRemoteClips();
+
+  window.addEventListener('beforeunload', () => {
+    stopMotionLoop();
+    if (isRecording) stopRecording(true);
+    stopStream();
+  });
+})();
+</script>

@@ -1,0 +1,4 @@
+node_modules/
+.env
+viewfinder-client.log
+*.log
