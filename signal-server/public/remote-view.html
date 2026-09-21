@@ -89,6 +89,67 @@
     font-size: 14px;
     cursor: pointer;
   }
+  .clips-section {
+    padding: 4px 16px 28px;
+  }
+  .clips-section h2 {
+    font-size: 13px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 10px;
+  }
+  .clip-player {
+    margin-bottom: 12px;
+    padding: 10px;
+    border-radius: 10px;
+    background: #16181c;
+  }
+  .clip-player video {
+    width: 100%;
+    max-width: none;
+    display: block;
+  }
+  .clip-player button {
+    margin-top: 8px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    border: none;
+    border-radius: 6px;
+    background: #2a2d33;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .clip-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .clip-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    background: #16181c;
+  }
+  .clip-row .time { font-size: 13px; }
+  .clip-row .dur { font-size: 11.5px; color: var(--text-dim); }
+  .clip-row button {
+    padding: 6px 14px;
+    font-size: 12.5px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  .clip-list .empty {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
 </style>
 </head>
 <body>
@@ -98,6 +159,17 @@
   </header>
   <div class="stage" id="stage">
     <p class="msg">연결 중…</p>
+  </div>
+
+  <div class="clips-section">
+    <h2>저장된 클립</h2>
+    <div class="clip-player" id="clipPlayer" hidden>
+      <video id="clipPlayerVideo" controls autoplay></video>
+      <button type="button" id="clipPlayerClose">닫기</button>
+    </div>
+    <div class="clip-list" id="clipList">
+      <span class="empty">불러오는 중…</span>
+    </div>
   </div>
 
 <script>
@@ -180,6 +252,74 @@
       try { await pc.addIceCandidate(msg.data); } catch {}
     }
   });
+
+  // ── 저장된 클립 목록 ──────────────────────────────────────────────
+  const clipList = document.getElementById('clipList');
+  const clipPlayer = document.getElementById('clipPlayer');
+  const clipPlayerVideo = document.getElementById('clipPlayerVideo');
+  document.getElementById('clipPlayerClose').addEventListener('click', () => {
+    clipPlayerVideo.pause();
+    clipPlayerVideo.removeAttribute('src');
+    clipPlayer.hidden = true;
+  });
+
+  function formatBytes(n) {
+    if (n === null || n === undefined) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function playClip(path) {
+    clipPlayerVideo.src = `/viewfinder-file?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`;
+    clipPlayer.hidden = false;
+    clipPlayer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // 녹화가 정상적으로 끝난 파일은 헤더에 정확한 길이가 있음 — 그런 파일까지 끝으로 탐색했다 되돌아오면
+    // 오히려 재생이 도중에 멈추므로, duration이 진짜 이상할 때(Infinity/NaN/0)만 재계산 시도
+    clipPlayerVideo.addEventListener('loadedmetadata', () => {
+      const d = clipPlayerVideo.duration;
+      if (d === 0 || !Number.isFinite(d)) {
+        clipPlayerVideo.currentTime = 1e9;
+        clipPlayerVideo.addEventListener('timeupdate', function fixDuration() {
+          clipPlayerVideo.removeEventListener('timeupdate', fixDuration);
+          clipPlayerVideo.currentTime = 0;
+        }, { once: true });
+      }
+    }, { once: true });
+  }
+
+  function renderClip(clip) {
+    const row = document.createElement('div');
+    row.className = 'clip-row';
+    const ts = clip.modified ? new Date(clip.modified) : null;
+    const label = clip.path.replace(/^viewfinder-motion\//, '');
+    row.innerHTML = `
+      <div>
+        <div class="time">${ts ? ts.toLocaleString() : clip.name}</div>
+        <div class="dur">${formatBytes(clip.size)} · ${label}</div>
+      </div>
+      <button type="button">재생</button>
+    `;
+    row.querySelector('button').addEventListener('click', () => playClip(clip.path));
+    clipList.appendChild(row);
+  }
+
+  async function loadClips() {
+    try {
+      const res = await fetch(`/viewfinder-clips?token=${encodeURIComponent(token)}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'unknown error');
+      clipList.innerHTML = '';
+      if (data.clips.length === 0) {
+        clipList.innerHTML = '<span class="empty">아직 클립이 없습니다.</span>';
+      } else {
+        data.clips.forEach(renderClip);
+      }
+    } catch (err) {
+      clipList.innerHTML = `<span class="empty">클립 목록을 불러오지 못했습니다 (${err.message || err})</span>`;
+    }
+  }
+  loadClips();
 })();
 </script>
 </body>
