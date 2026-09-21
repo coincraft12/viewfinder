@@ -233,7 +233,11 @@
   };
 
   ws.addEventListener('open', () => setStatus('시그널링 연결됨'));
-  ws.addEventListener('close', () => setStatus('시그널링 서버 연결 끊김', 'err'));
+  ws.addEventListener('close', () => {
+    setStatus('연결 끊김 — 재접속 중…', 'err');
+    // 프록시가 idle 연결을 끊는 경우 대비 — 페이지 새로고침으로 깔끔하게 재연결
+    setTimeout(() => location.reload(), 2000);
+  });
   ws.addEventListener('error', () => setStatus('시그널링 오류', 'err'));
 
   ws.addEventListener('message', async (ev) => {

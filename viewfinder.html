@@ -1428,8 +1428,11 @@
     });
     remoteWs.addEventListener('close', () => {
       if (chkRemote.checked) {
-        remoteStatus.textContent = 'DISCONNECTED';
+        remoteStatus.textContent = 'RECONNECTING';
         remoteStatus.className = 'status-badge err';
+        // Cloudflare 등 프록시가 한동안 조용한 WebSocket을 끊는 경우가 있음 — 서버에 핑을
+        // 추가했지만 혹시 또 끊기더라도 사용자가 체크박스를 다시 안 눌러도 되게 자동 재연결
+        setTimeout(() => { if (chkRemote.checked) startRemoteViewing(); }, 2000);
       }
     });
     remoteWs.addEventListener('error', () => {

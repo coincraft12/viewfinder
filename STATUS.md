@@ -6,6 +6,7 @@
 | 원격 보기 시그널링 | custody-staging(204.168.242.99)에 pm2로 상시 구동 (`/opt/viewfinder-signal`), `https://staging.coincraft.io/viewfinder-signal`(WS) + `/viewfinder/`(뷰어 페이지) + `/viewfinder-clips`, `/viewfinder-file`(저장된 클립 열람 API) |
 
 ## 마지막 작업 (2026-09-21)
+- **원격 보기 연결 끊김 버그 수정** — Cloudflare가 idle WebSocket을 자동으로 끊어버려서(무통신 ~100초) 아무도 안 보고 있을 때 브로드캐스터가 DISCONNECTED로 표시되던 문제. signal-server에 30초 간격 ping/pong 추가 + 혹시 끊겨도 브로드캐스터/뷰어 양쪽 다 자동 재연결하도록 수정
 - **원격 클립 열람 기능 추가** — 뷰어 페이지(`/viewfinder/`)에 저장된 클립 목록/재생 UI 추가. `signal-server`가 Storage Box(WebDAV)를 직접 읽어서 제공(`/viewfinder-clips`, `/viewfinder-file`) — PC가 꺼져 있어도 클립 열람 가능
 - z_Temp 임시 작업분을 `F:\Workplace\viewfinder` 정식 레포로 이관, git 초기화 후 GitHub(`coincraft12/viewfinder`) push
 - 모션 녹화 프레임 유실 버그(비동기 stop/start 경쟁 상태), 재생시간 0초 버그, 저조도(노출시간 하드웨어 제어), 해상도(640x480→1920x1080) 등 다수 버그 수정

@@ -186,6 +186,24 @@ wss.on('connection', (ws, req) => {
   }
 });
 
+// Cloudflare(및 다른 프록시)는 한동안 데이터가 안 오가는 WebSocket 연결을 자동으로 끊어버림
+// (보통 idle ~100초) — 그래서 아무도 안 보고 있을 때도 연결이 끊겨서 브로드캐스터가
+// "DISCONNECTED"로 표시되는 문제가 있었음. 주기적으로 ping을 보내 연결을 살아있게 유지함.
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+});
+
+const keepaliveInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => clearInterval(keepaliveInterval));
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[signal] listening on 127.0.0.1:${PORT}`);
 });
